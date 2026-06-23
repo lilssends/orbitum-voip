@@ -1,0 +1,1 @@
+{"name":"orbitum-voip-service","version":"1.0.0","description":"Microservico VoIP Plivo para click-to-call do Orbitum Hub","main":"index.js","scripts":{"start":"node index.js"},"dependencies":{"express":"^4.18.2","plivo":"^4.60.0","cors":"^2.8.5"}}
