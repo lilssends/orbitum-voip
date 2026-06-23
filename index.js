@@ -1,47 +1,58 @@
-// orbitum-voip-service — microservico Plivo para click-to-call
-// Gera tokens de acesso para o SDK Plivo no browser e responde o XML de saida.
+// orbitum-voip-service — microservico Twilio para click-to-call
+// Gera Access Tokens para o Twilio Voice SDK no browser e responde o TwiML de saida.
 
 const express = require('express');
-const plivo = require('plivo');
 const cors = require('cors');
+const twilio = require('twilio');
+
+const AccessToken = twilio.jwt.AccessToken;
+const VoiceGrant = AccessToken.VoiceGrant;
+const VoiceResponse = twilio.twiml.VoiceResponse;
 
 const app = express();
 app.use(cors({ origin: '*' }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-const AUTH_ID    = process.env.PLIVO_AUTH_ID;
-const AUTH_TOKEN = process.env.PLIVO_AUTH_TOKEN;
-const APP_ID     = process.env.PLIVO_APP_ID;
-const CALLER_ID  = process.env.PLIVO_CALLER_ID;
+// Credenciais (variaveis de ambiente no Railway)
+const ACCOUNT_SID   = process.env.TWILIO_ACCOUNT_SID;
+const API_KEY       = process.env.TWILIO_API_KEY;
+const API_SECRET    = process.env.TWILIO_API_SECRET;
+const TWIML_APP_SID = process.env.TWILIO_TWIML_APP_SID;
+const CALLER_ID     = process.env.TWILIO_CALLER_ID;
 
 // Healthcheck
-app.get('/', (req, res) => res.json({ service: 'orbitum-voip', status: 'ok' }));
+app.get('/', (req, res) => res.json({ service: 'orbitum-voip', provider: 'twilio', status: 'ok' }));
 
-// 1) Token de acesso para o browser (SDK Plivo)
+// 1) Token de acesso para o browser (Twilio Voice SDK)
 app.get('/voip/token', (req, res) => {
   try {
-    const username = (req.query.user || 'atendente').toString().replace(/[^a-zA-Z0-9_]/g, '');
-    const endpoint = new plivo.AccessToken(AUTH_ID, AUTH_TOKEN, username, {
-      validTill: Math.floor(Date.now() / 1000) + 3600,
+    const identity = (req.query.user || 'atendente').toString().replace(/[^a-zA-Z0-9_]/g, '');
+    const token = new AccessToken(ACCOUNT_SID, API_KEY, API_SECRET, {
+      identity: identity,
+      ttl: 3600,
     });
-    endpoint.addVoiceGrants(APP_ID, true, true);
-    res.json({ token: endpoint.toJwt(), username });
+    const grant = new VoiceGrant({
+      outgoingApplicationSid: TWIML_APP_SID,
+      incomingAllow: false,
+    });
+    token.addGrant(grant);
+    res.json({ token: token.toJwt(), identity });
   } catch (e) {
     console.error('token error', e);
     res.status(500).json({ error: e.message });
   }
 });
 
-// 2) XML de saida — Plivo chama este endpoint ao iniciar a chamada
+// 2) TwiML de saida — Twilio chama este endpoint ao iniciar a chamada
 app.all('/voip/outbound', (req, res) => {
   const destino = (req.body && req.body.To) || req.query.To || req.query.to;
-  const response = plivo.Response();
-  const dial = response.addDial({ callerId: CALLER_ID });
-  dial.addNumber(destino);
+  const response = new VoiceResponse();
+  const dial = response.dial({ callerId: CALLER_ID });
+  dial.number(destino);
   res.set('Content-Type', 'text/xml');
-  res.send(response.toXML());
+  res.send(response.toString());
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log('orbitum-voip rodando na porta ' + PORT));
+app.listen(PORT, () => console.log('orbitum-voip (twilio) rodando na porta ' + PORT));
